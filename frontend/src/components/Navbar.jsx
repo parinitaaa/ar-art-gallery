@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Palette, User, Menu, X, ShoppingCart, LogOut, ChevronDown } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useCart } from './CartContext';
 
 const NAV_LINKS = [
     { to: '/gallery', label: 'Virtual Gallery' },
@@ -16,6 +17,7 @@ const Navbar = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const dropdownRef = useRef(null);
+    const { cart, setIsCartOpen } = useCart();
 
     // Read auth from localStorage (updates on login/logout anywhere)
     const loadUser = () => {
@@ -104,11 +106,16 @@ const Navbar = () => {
 
                 {/* Right actions */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9ca3af', transition: 'color 0.2s' }}
+                    <button onClick={() => setIsCartOpen(true)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#9ca3af', transition: 'color 0.2s', position: 'relative' }}
                         onMouseOver={e => e.currentTarget.style.color = '#fff'}
                         onMouseOut={e => e.currentTarget.style.color = '#9ca3af'}
                     >
                         <ShoppingCart size={22} />
+                        {cart.length > 0 && (
+                            <span style={{ position: 'absolute', top: -8, right: -10, background: '#a855f7', color: '#fff', fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 99 }}>
+                                {cart.length}
+                            </span>
+                        )}
                     </button>
 
                     {user ? (

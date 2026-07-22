@@ -7,4 +7,8 @@ export default defineConfig({
   optimizeDeps: {
     include: ['three', '@react-three/fiber', '@react-three/drei'],
   },
+  server: {
+    port: 3005,
+    strictPort: true
+  }
 })

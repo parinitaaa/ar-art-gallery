@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { TrendingUp, Image as ImageIcon, Package, Settings, LogOut, DollarSign, Eye, Heart, Plus } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { TrendingUp, Image as ImageIcon, Package, Settings, LogOut, DollarSign, Eye, Heart, Plus, Upload, X, CheckCircle, Loader2, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ARTWORKS } from '../data/artworks';
 
@@ -25,6 +25,161 @@ const RECENT_ARTWORKS = [
 
 const Dashboard = () => {
     const [activeTab, setActiveTab] = useState('overview');
+    const [isUploading, setIsUploading] = useState(false);
+    const [formData, setFormData] = useState({ title: '', price: '', category: 'Digital', description: '' });
+    const [imageFile, setImageFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
+    const [uploadedArtworks, setUploadedArtworks] = useState([]);
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef(null);
+
+    const user = JSON.parse(localStorage.getItem('ar_user') || '{}');
+    const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+
+    const [profileName, setProfileName] = useState(user.name || 'Elena V.');
+    const [profileBio, setProfileBio] = useState(user.bio || 'Digital artist exploring the intersection of emotion and technology.');
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
+    const [profileSaved, setProfileSaved] = useState(false);
+
+    // Fetch ONLY this user's artworks from dedicated backend endpoint
+    const fetchMyArtworks = async () => {
+        const token = localStorage.getItem('ar_token');
+        try {
+            const res = await fetch('http://localhost:5005/api/artworks/mine', {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setUploadedArtworks(data.map(a => ({
+                    ...a,
+                    status: a.status || 'active',
+                    img: a.img || a.images?.[0]?.url || '',
+                    price: typeof a.price === 'object' ? `${a.price.value} ${a.price.currency}` : a.price,
+                })));
+            } else {
+                setUploadedArtworks([]);
+            }
+        } catch {
+            setUploadedArtworks([]);
+        }
+    };
+
+    const handleDeleteArtwork = async (artId, e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this artwork?')) return;
+        const token = localStorage.getItem('ar_token');
+        try {
+            await fetch(`http://localhost:5005/api/artworks/${artId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setUploadedArtworks(prev => prev.filter(a => String(a.id) !== String(artId) && String(a._id) !== String(artId)));
+        } catch (err) {
+            alert('Failed to delete artwork.');
+        }
+    };
+
+    useEffect(() => { fetchMyArtworks(); }, []);
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setImageFile(file);
+            setPreviewUrl(URL.createObjectURL(file));
+        }
+    };
+
+    const handleUpload = async (e) => {
+        e.preventDefault();
+        if (!imageFile) return alert("Please select an image file.");
+        
+        const data = new FormData();
+        Object.keys(formData).forEach(k => data.append(k, formData[k]));
+        data.append('image', imageFile);
+
+        const token = localStorage.getItem('ar_token');
+        setUploading(true);
+        try {
+            const res = await fetch('http://localhost:5005/api/artworks', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: data
+            });
+            if (res.ok) {
+                const newArt = await res.json();
+                // Add to uploadedArtworks immediately so it shows in dashboard
+                setUploadedArtworks(prev => [{ ...newArt, status: 'active', views: 0, likes: 0, img: newArt.img || (newArt.images?.[0]?.url) }, ...prev]);
+                setIsUploading(false);
+                setFormData({ title: '', price: '', category: 'Digital', description: '' });
+                setImageFile(null);
+                setPreviewUrl(null);
+                setActiveTab('overview');
+                alert('Artwork published successfully!');
+            } else {
+                const err = await res.json();
+                alert('Upload failed: ' + (err.message || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            setUploading(false);
+        }
+    };
+    const handleSaveProfile = (e) => {
+        e.preventDefault();
+        const updatedUser = { ...user, name: profileName, bio: profileBio };
+        localStorage.setItem('ar_user', JSON.stringify(updatedUser));
+        window.dispatchEvent(new Event('storage'));
+        setProfileSaved(true);
+        setTimeout(() => setProfileSaved(false), 3000);
+    };
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        setPasswordMsg({ text: '', type: '' });
+
+        if (!currentPassword) {
+            return setPasswordMsg({ text: 'Please enter your current password.', type: 'error' });
+        }
+        if (newPassword.length < 6) {
+            return setPasswordMsg({ text: 'New password must be at least 6 characters long.', type: 'error' });
+        }
+        if (newPassword !== confirmPassword) {
+            return setPasswordMsg({ text: 'New passwords do not match.', type: 'error' });
+        }
+
+        const token = localStorage.getItem('ar_token');
+        if (!token) {
+            return setPasswordMsg({ text: 'You must be logged in to change your password.', type: 'error' });
+        }
+
+        try {
+            const res = await fetch('http://localhost:5005/api/auth/password', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ currentPassword, newPassword })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                setPasswordMsg({ text: '✓ Password changed successfully! You can now log in with your new password.', type: 'success' });
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+            } else {
+                setPasswordMsg({ text: data.message || 'Failed to update password.', type: 'error' });
+            }
+        } catch {
+            setPasswordMsg({ text: 'Could not connect to the server. Make sure the backend is running.', type: 'error' });
+        }
+    };
 
     return (
         <div style={{ display: 'flex', gap: 28, maxWidth: 1200, margin: '0 auto', padding: '24px 16px 60px' }}>
@@ -40,10 +195,10 @@ const Dashboard = () => {
                 {/* Avatar */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #8a2be2, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16, color: '#fff' }}>
-                        EV
+                        {initials}
                     </div>
                     <div>
-                        <div style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>Elena V.</div>
+                        <div style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>{user.name || 'User'}</div>
                         <div style={{ fontSize: 11, color: '#8a2be2', background: 'rgba(138,43,226,0.15)', padding: '2px 8px', borderRadius: 99, marginTop: 4, display: 'inline-block', border: '1px solid rgba(138,43,226,0.3)' }}>Artist</div>
                     </div>
                 </div>
@@ -66,7 +221,7 @@ const Dashboard = () => {
                     ))}
                 </nav>
 
-                <button style={{
+                <button onClick={() => { localStorage.removeItem('ar_token'); localStorage.removeItem('ar_user'); window.dispatchEvent(new Event('storage')); window.location.href = '/'; }} style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '10px 14px', borderRadius: 10, border: 'none',
                     background: 'transparent', color: '#ef4444',
@@ -108,32 +263,39 @@ const Dashboard = () => {
                         <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, overflow: 'hidden' }}>
                             <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <h3 style={{ margin: 0, color: '#fff', fontWeight: 700 }}>Recent Artworks</h3>
-                                <button style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 16px', borderRadius: 8, cursor: 'pointer' }}>
+                                <button onClick={() => { setActiveTab('artworks'); setIsUploading(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, padding: '8px 16px', borderRadius: 8, cursor: 'pointer' }}>
                                     <Plus size={15} /> Upload New
                                 </button>
                             </div>
-                            {RECENT_ARTWORKS.map((art) => (
-                                <div key={art.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }}
+                            {uploadedArtworks.length === 0 ? (
+                                <div style={{ padding: '40px 24px', textAlign: 'center', color: '#6b7280' }}>No artworks yet. Upload one!</div>
+                            ) : uploadedArtworks.map((art, idx) => (
+                                <div key={art.id || idx} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }}
                                     onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                                     onMouseOut={e => e.currentTarget.style.background = 'transparent'}
                                 >
-                                    <div style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-                                        <img src={art.img} alt={art.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <div style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: '#1a1a1a' }}>
+                                        <img src={art.img || art.images?.[0]?.url} alt={art.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} />
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <Link to={`/artwork/${art.id}`} style={{ fontWeight: 600, color: '#fff', textDecoration: 'none', fontSize: 15 }}>{art.title}</Link>
-                                        <div style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>{art.views} views · {art.likes} likes</div>
+                                        <div style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>{art.views || 0} views · {art.likes || 0} likes</div>
                                     </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{art.price}</div>
-                                        <span style={{
-                                            fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
-                                            background: art.status === 'active' ? 'rgba(16,185,129,0.15)' : 'rgba(139,92,246,0.15)',
-                                            color: art.status === 'active' ? '#10b981' : '#a855f7',
-                                            border: `1px solid ${art.status === 'active' ? 'rgba(16,185,129,0.3)' : 'rgba(139,92,246,0.3)'}`,
-                                        }}>
-                                            {art.status === 'active' ? 'Active' : 'Sold'}
-                                        </span>
+                                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div>
+                                            <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{typeof art.price === 'object' ? `${art.price.value} ${art.price.currency}` : art.price}</div>
+                                            <span style={{
+                                                fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
+                                                background: art.status === 'sold' ? 'rgba(139,92,246,0.15)' : 'rgba(16,185,129,0.15)',
+                                                color: art.status === 'sold' ? '#a855f7' : '#10b981',
+                                                border: `1px solid ${art.status === 'sold' ? 'rgba(139,92,246,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                                            }}>
+                                                {art.status === 'sold' ? 'Sold' : 'Active'}
+                                            </span>
+                                        </div>
+                                        <button onClick={(e) => handleDeleteArtwork(art.id || art._id, e)} title="Delete Artwork" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', borderRadius: 8, padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Trash2 size={15} />
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -142,18 +304,143 @@ const Dashboard = () => {
                 )}
 
                 {activeTab === 'artworks' && (
-                    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 40, textAlign: 'center', color: '#6b7280' }}>
-                        <ImageIcon size={48} style={{ margin: '0 auto 16px', display: 'block', color: '#374151' }} />
-                        <p style={{ margin: 0 }}>Upload and manage your artworks here</p>
-                        <button style={{ marginTop: 20, display: 'inline-flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 700, padding: '12px 24px', borderRadius: 10, cursor: 'pointer' }}>
-                            <Plus size={18} /> Upload Artwork
-                        </button>
-                    </div>
+                    isUploading ? (
+                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 32 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                                <h2 style={{ margin: 0, color: '#fff', fontSize: 22 }}>Upload New Artwork</h2>
+                                <button onClick={() => setIsUploading(false)} style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer' }}><X size={20} /></button>
+                            </div>
+                            
+                            <form onSubmit={handleUpload} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                                <div style={{ display: 'flex', gap: 24 }}>
+                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                        <div>
+                                            <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Artwork Title</label>
+                                            <input type="text" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="e.g. Neon Dreams" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 16 }}>
+                                            <div style={{ flex: 1 }}>
+                                                <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Price (ETH)</label>
+                                                <input type="number" step="0.01" required value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} placeholder="0.5" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Category</label>
+                                                <select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff', appearance: 'none', WebkitAppearance: 'none' }}>
+                                                    <option value="Digital" style={{ background: '#1a1a1a', color: '#fff' }}>Digital</option>
+                                                    <option value="Abstract" style={{ background: '#1a1a1a', color: '#fff' }}>Abstract</option>
+                                                    <option value="Geometric" style={{ background: '#1a1a1a', color: '#fff' }}>Geometric</option>
+                                                    <option value="Generative" style={{ background: '#1a1a1a', color: '#fff' }}>Generative</option>
+                                                    <option value="Expressionist" style={{ background: '#1a1a1a', color: '#fff' }}>Expressionist</option>
+                                                    <option value="Pop Art" style={{ background: '#1a1a1a', color: '#fff' }}>Pop Art</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Description</label>
+                                            <textarea rows={4} required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Describe the inspiration behind this piece..." style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                        </div>
+                                    </div>
+
+                                    <div style={{ width: 300, display: 'flex', flexDirection: 'column' }}>
+                                        <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Artwork Image</label>
+                                        <div onClick={() => fileInputRef.current?.click()} style={{ flex: 1, border: '2px dashed rgba(255,255,255,0.2)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden', background: 'rgba(255,255,255,0.02)', position: 'relative' }}>
+                                            {previewUrl ? (
+                                                <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ textAlign: 'center', color: '#6b7280' }}>
+                                                    <Upload size={32} style={{ margin: '0 auto 12px', color: '#9ca3af' }} />
+                                                    <div style={{ fontSize: 14 }}>Click to upload image</div>
+                                                    <div style={{ fontSize: 11, marginTop: 4 }}>JPEG, PNG up to 10MB</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} />
+                                    </div>
+                                </div>
+                                <button type="submit" disabled={uploading} style={{ alignSelf: 'flex-start', background: uploading ? '#555' : 'linear-gradient(135deg, #8a2be2, #a855f7)', color: '#fff', border: 'none', padding: '12px 32px', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: uploading ? 'not-allowed' : 'pointer', marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {uploading ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Publishing...</> : 'Publish Artwork'}
+                                </button>
+                            </form>
+                        </div>
+                    ) : (
+                        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 40, textAlign: 'center', color: '#6b7280' }}>
+                            <ImageIcon size={48} style={{ margin: '0 auto 16px', display: 'block', color: '#374151' }} />
+                            <p style={{ margin: 0 }}>You have not uploaded any artworks yet.</p>
+                            <button onClick={() => setIsUploading(true)} style={{ marginTop: 20, display: 'inline-flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 700, padding: '12px 24px', borderRadius: 10, cursor: 'pointer' }}>
+                                <Plus size={18} /> Upload Artwork
+                            </button>
+                        </div>
+                    )
                 )}
 
-                {(activeTab === 'orders' || activeTab === 'settings') && (
+                {activeTab === 'orders' && (
                     <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 40, textAlign: 'center', color: '#6b7280' }}>
-                        <p>This section is coming soon.</p>
+                        <Package size={48} style={{ margin: '0 auto 16px', display: 'block', color: '#374151' }} />
+                        <p>You have no recent orders.</p>
+                    </div>
+                )}
+                
+                {activeTab === 'settings' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        {/* Profile Info Form */}
+                        <form onSubmit={handleSaveProfile} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 32 }}>
+                            <h2 style={{ margin: '0 0 24px', color: '#fff', fontSize: 20 }}>Profile Information</h2>
+                            
+                            {profileSaved && (
+                                <div style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <CheckCircle size={16} /> Profile details saved successfully!
+                                </div>
+                            )}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                                <div>
+                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Display Name</label>
+                                    <input type="text" value={profileName} onChange={e => setProfileName(e.target.value)} required style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Logged-in Email ID</label>
+                                    <input type="email" value={user.email || 'user@ar-art-gallery.com'} disabled readOnly style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: '12px', color: '#888', cursor: 'not-allowed' }} />
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: 20 }}>
+                                <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Bio / Artist Statement</label>
+                                <textarea rows={3} value={profileBio} onChange={e => setProfileBio(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff', resize: 'vertical' }} />
+                            </div>
+                            <button type="submit" style={{ background: 'linear-gradient(135deg, #8a2be2, #a855f7)', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>Save Changes</button>
+                        </form>
+
+                        {/* Security / Password Change */}
+                        <form onSubmit={handleChangePassword} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 32 }}>
+                            <h2 style={{ margin: '0 0 24px', color: '#fff', fontSize: 20 }}>Security & Password</h2>
+
+                            {passwordMsg.text && (
+                                <div style={{
+                                    background: passwordMsg.type === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)',
+                                    border: `1px solid ${passwordMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                                    color: passwordMsg.type === 'error' ? '#f87171' : '#34d399',
+                                    padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 20
+                                }}>
+                                    {passwordMsg.text}
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 440, marginBottom: 24 }}>
+                                <div>
+                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Current Password</label>
+                                    <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required placeholder="••••••••" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>New Password</label>
+                                    <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required placeholder="At least 6 characters" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', color: '#9ca3af', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Confirm New Password</label>
+                                    <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required placeholder="Re-enter new password" style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px', color: '#fff' }} />
+                                </div>
+                            </div>
+
+                            <button type="submit" style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', padding: '10px 24px', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>Update Password</button>
+                        </form>
                     </div>
                 )}
             </main>

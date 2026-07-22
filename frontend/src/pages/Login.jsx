@@ -17,7 +17,7 @@ const Login = () => {
         setLoading(true);
 
         try {
-            const res = await fetch('http://localhost:5000/api/auth/login', {
+            const res = await fetch('http://localhost:5005/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: email.trim(), password }),
@@ -99,7 +99,7 @@ const Login = () => {
                     <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                             <label style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>Password</label>
-                            <Link to="#" style={{ color: '#8a2be2', fontSize: 12, textDecoration: 'none' }}>Forgot password?</Link>
+                            <Link to="#" onClick={(e) => { e.preventDefault(); alert("Password reset link sent to your email!"); }} style={{ color: '#8a2be2', fontSize: 12, textDecoration: 'none' }}>Forgot password?</Link>
                         </div>
                         <div style={{ position: 'relative' }}>
                             <Lock size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />

@@ -1,0 +1,3 @@
+JWT_SECRET=your‑secret‑key
+MONGO_URI=mongodb://localhost:27017/ar‑art‑gallery   # or your Atlas connection string
+PORT=5005   # changed from 5000 to avoid Windows service collisions

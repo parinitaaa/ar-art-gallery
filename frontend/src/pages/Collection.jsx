@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Search, Grid, List, SlidersHorizontal, Heart, ShoppingCart, Loader2 } from 'lucide-react';
 import { ARTWORKS as FALLBACK_ARTWORKS } from '../data/artworks';
+import { useCart } from '../components/CartContext';
 
 const CATEGORIES = ['All', 'Abstract', 'Digital', 'Geometric', 'Expressionist', 'Pop Art', 'Generative'];
 
@@ -13,17 +14,32 @@ export default function Collection() {
     const [sortBy, setSortBy] = useState('popular');
     const [viewMode, setViewMode] = useState('grid');
     const [liked, setLiked] = useState({});
+    const { cart, addToCart } = useCart();
+    const navigate = useNavigate();
+    
+    const isArtInCart = (id) => cart.some(item => item.id === id);
 
     useEffect(() => {
         const fetchArtworks = async () => {
             try {
                 setLoading(true);
-                const res = await fetch('http://localhost:5000/api/artworks');
+                const res = await fetch('http://localhost:5005/api/artworks');
 
-                if (!res.ok) throw new Error('API fetch failed');
-
-                const data = await res.json();
-                setArtworks(data && data.length > 0 ? data : FALLBACK_ARTWORKS);
+                if (res.ok) {
+                    const data = await res.json();
+                    const normalized = data.map(a => ({
+                        ...a,
+                        img: a.img || (a.images?.[0]?.url) || '',
+                        accent: a.accent || '#8a2be2',
+                        price: typeof a.price === 'object' ? `${a.price.value} ${a.price.currency}` : a.price,
+                        usd: a.usd || (typeof a.price === 'object' ? `$${Math.round((a.price.value || 0) * 2000)}` : '$500'),
+                    }));
+                    const apiIds = new Set(normalized.map(a => String(a.id)));
+                    const fallbackOnly = FALLBACK_ARTWORKS.filter(a => !apiIds.has(String(a.id)));
+                    setArtworks([...normalized, ...fallbackOnly]);
+                } else {
+                    setArtworks(FALLBACK_ARTWORKS);
+                }
             } catch (err) {
                 console.warn('API offline, using fallback data:', err.message);
                 setArtworks(FALLBACK_ARTWORKS);
@@ -41,7 +57,8 @@ export default function Collection() {
         const matchSearch = titleMatch || artistMatch;
         const matchCat = activeCategory === 'All' || a.badge === activeCategory;
         return matchSearch && matchCat;
-    }).sort((a, b) => {
+    }).map(a => ({ ...a, accent: a.accent || '#8a2be2' })) // Ensure accent always has a value
+    .sort((a, b) => {
         if (sortBy === 'popular') return (b.likes || 0) - (a.likes || 0);
         if (sortBy === 'price-asc') return parseFloat(a.price) - parseFloat(b.price);
         if (sortBy === 'price-desc') return parseFloat(b.price) - parseFloat(a.price);
@@ -68,10 +85,10 @@ export default function Collection() {
                 </div>
                 <div style={{ position: 'relative' }}>
                     <SlidersHorizontal size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '11px 14px 11px 36px', color: '#fff', fontSize: 14, outline: 'none', cursor: 'pointer', paddingRight: 20 }}>
-                        <option value="popular" style={{ background: '#1a1a1a' }}>Most Popular</option>
-                        <option value="price-asc" style={{ background: '#1a1a1a' }}>Price: Low to High</option>
-                        <option value="price-desc" style={{ background: '#1a1a1a' }}>Price: High to Low</option>
+                    <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '11px 14px 11px 36px', color: '#fff', fontSize: 14, outline: 'none', cursor: 'pointer', paddingRight: 20, appearance: 'none', WebkitAppearance: 'none' }}>
+                        <option value="popular" style={{ background: '#1a1a1a', color: '#fff' }}>Most Popular</option>
+                        <option value="price-asc" style={{ background: '#1a1a1a', color: '#fff' }}>Price: Low to High</option>
+                        <option value="price-desc" style={{ background: '#1a1a1a', color: '#fff' }}>Price: High to Low</option>
                     </select>
                 </div>
                 <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden' }}>
@@ -115,19 +132,19 @@ export default function Collection() {
                                     onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.borderColor = art.accent + '66'; e.currentTarget.style.boxShadow = `0 20px 40px rgba(0,0,0,0.5), 0 0 20px ${art.accent}22`; }}
                                     onMouseOut={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.boxShadow = 'none'; }}
                                 >
-                                    <div style={{ height: 220, position: 'relative', overflow: 'hidden' }}>
+                                    <div onClick={() => navigate(`/artwork/${art.id}`)} style={{ height: 220, position: 'relative', overflow: 'hidden' }}>
                                         <img src={art.img} alt={art.title} style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s', display: 'block' }}
                                             onMouseOver={e => e.currentTarget.style.transform = 'scale(1.06)'}
                                             onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
                                         />
-                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%)' }} />
+                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 50%)', pointerEvents: 'none' }} />
                                         <div style={{ position: 'absolute', top: 12, left: 12, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: `1px solid ${art.accent}66`, color: art.accent, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 99 }}>
                                             {art.badge}
                                         </div>
-                                        <button onClick={(e) => { e.preventDefault(); setLiked(l => ({ ...l, [art.id]: !l[art.id] })); }} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                                        <button onClick={(e) => { e.stopPropagation(); setLiked(l => ({ ...l, [art.id]: !l[art.id] })); }} style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                                             <Heart size={14} fill={liked[art.id] ? '#dc3545' : 'none'} color={liked[art.id] ? '#dc3545' : '#fff'} />
                                         </button>
-                                        <div style={{ position: 'absolute', bottom: 10, left: 12, color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>by {art.artist}</div>
+                                        <div style={{ position: 'absolute', bottom: 10, left: 12, color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>by {art.artist || 'Unknown Artist'}</div>
                                     </div>
 
                                     <div style={{ padding: '14px 16px' }}>
@@ -140,11 +157,11 @@ export default function Collection() {
                                                 <div style={{ color: '#6b7280', fontSize: 11 }}>{art.usd}</div>
                                             </div>
                                         </div>
-                                        <button style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: art.accent + '22', border: `1px solid ${art.accent}44`, color: art.accent, fontWeight: 600, fontSize: 13, padding: '9px', borderRadius: 10, cursor: 'pointer', transition: 'background 0.2s' }}
-                                            onMouseOver={e => e.currentTarget.style.background = art.accent + '44'}
-                                            onMouseOut={e => e.currentTarget.style.background = art.accent + '22'}
+                                        <button onClick={() => addToCart(art)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: isArtInCart(art.id) ? '#15803d' : art.accent + '22', border: `1px solid ${isArtInCart(art.id) ? '#15803d' : art.accent + '44'}`, color: isArtInCart(art.id) ? '#fff' : art.accent, fontWeight: 600, fontSize: 13, padding: '9px', borderRadius: 10, cursor: 'pointer', transition: 'background 0.2s' }}
+                                            onMouseOver={e => e.currentTarget.style.background = isArtInCart(art.id) ? '#166534' : art.accent + '44'}
+                                            onMouseOut={e => e.currentTarget.style.background = isArtInCart(art.id) ? '#15803d' : art.accent + '22'}
                                         >
-                                            <ShoppingCart size={14} /> Add to Cart
+                                            <ShoppingCart size={14} /> {isArtInCart(art.id) ? '✓ Added' : 'Add to Cart'}
                                         </button>
                                     </div>
                                 </div>
@@ -153,7 +170,7 @@ export default function Collection() {
                                     onMouseOver={e => { e.currentTarget.style.borderColor = art.accent + '55'; e.currentTarget.style.boxShadow = `0 4px 20px rgba(0,0,0,0.3)`; }}
                                     onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.boxShadow = 'none'; }}
                                 >
-                                    <div style={{ width: 80, height: 80, borderRadius: 12, overflow: 'hidden', flexShrink: 0 }}>
+                                    <div onClick={() => navigate(`/artwork/${art.id}`)} style={{ width: 80, height: 80, borderRadius: 12, overflow: 'hidden', flexShrink: 0, cursor: 'pointer' }}>
                                         <img src={art.img} alt={art.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     </div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -165,8 +182,8 @@ export default function Collection() {
                                             <div style={{ fontWeight: 700, color: '#fff', fontSize: 16 }}>{art.price}</div>
                                             <div style={{ color: '#6b7280', fontSize: 12 }}>{art.usd}</div>
                                         </div>
-                                        <button style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, padding: '10px 20px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                            <ShoppingCart size={14} /> Buy Now
+                                        <button onClick={() => addToCart(art)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: isArtInCart(art.id) ? '#15803d' : 'linear-gradient(135deg, #8a2be2, #a855f7)', border: 'none', color: '#fff', fontWeight: 600, fontSize: 13, padding: '10px 20px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                            <ShoppingCart size={14} /> {isArtInCart(art.id) ? '✓ Added' : 'Buy Now'}
                                         </button>
                                     </div>
                                 </div>

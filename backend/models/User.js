@@ -33,16 +33,11 @@ const userSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Password hashing middleware (Mongoose 9 async pre-hook — no next() call needed)
+// Password hashing middleware
 userSchema.pre('save', async function () {
     if (!this.isModified('password')) return;
-    // bcryptjs v3 uses callbacks — wrap in a Promise
-    const salt = await new Promise((res, rej) =>
-        bcrypt.genSalt(process.env.BCRYPT_ROUNDS ? parseInt(process.env.BCRYPT_ROUNDS) : 10, (err, s) => err ? rej(err) : res(s))
-    );
-    this.password = await new Promise((res, rej) =>
-        bcrypt.hash(this.password, salt, null, (err, h) => err ? rej(err) : res(h))
-    );
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
 });
 
 const User = mongoose.model('User', userSchema);
