@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Heart, Share2, ShoppingCart, RotateCcw, ZoomIn, Maximize2, Eye, Loader2, X } from 'lucide-react';
+import { ArrowLeft, Heart, Share2, ShoppingCart, RotateCcw, ZoomIn, Maximize2, Eye, Loader2, X, Check } from 'lucide-react';
 import { useState, useEffect, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
@@ -14,6 +14,7 @@ const ArtworkDetails = () => {
     const [art, setArt] = useState(null);
     const [loading, setLoading] = useState(true);
     const [liked, setLiked] = useState(false);
+    const [copied, setCopied] = useState(false);
     const { cart, addToCart } = useCart();
     const isArtInCart = art ? cart.some(item => item.id === art.id) : false;
     const [zoomed, setZoomed] = useState(false);
@@ -23,6 +24,25 @@ const ArtworkDetails = () => {
     const [offerOpen, setOfferOpen] = useState(false);
     const [offerAmount, setOfferAmount] = useState('');
     const [offerMsg, setOfferMsg] = useState('');
+
+    const handleShare = async () => {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(window.location.href);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = window.location.href;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2500);
+        } catch (err) {
+            console.error('Failed to copy link:', err);
+        }
+    };
 
     useEffect(() => {
         const fetchArtwork = async () => {
@@ -114,9 +134,31 @@ const ArtworkDetails = () => {
                             <button onClick={() => setLiked(l => !l)} style={{ width: 44, height: 44, borderRadius: '50%', background: liked ? '#dc354522' : 'rgba(255,255,255,0.06)', border: `1px solid ${liked ? '#dc3545aa' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
                                 <Heart size={18} fill={liked ? '#dc3545' : 'none'} color={liked ? '#dc3545' : '#9ca3af'} />
                             </button>
-                            <button style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Share2 size={18} color="#9ca3af" />
-                            </button>
+                            <div style={{ position: 'relative' }}>
+                                <button onClick={handleShare} title={copied ? "Link copied!" : "Share artwork"} style={{ width: 44, height: 44, borderRadius: '50%', background: copied ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)', border: `1px solid ${copied ? '#22c55e' : 'rgba(255,255,255,0.1)'}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                                    {copied ? <Check size={18} color="#22c55e" /> : <Share2 size={18} color="#9ca3af" />}
+                                </button>
+                                {copied && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        bottom: '100%',
+                                        left: '50%',
+                                        transform: 'translateX(-50%)',
+                                        marginBottom: 8,
+                                        padding: '4px 10px',
+                                        background: '#22c55e',
+                                        color: '#fff',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        borderRadius: 6,
+                                        whiteSpace: 'nowrap',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                        zIndex: 10
+                                    }}>
+                                        Link Copied!
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
